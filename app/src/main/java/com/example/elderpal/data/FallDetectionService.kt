@@ -54,7 +54,7 @@ class FallDetectionService : Service() {
             sensorManager.registerListener(
                 fallDetector,
                 sensor,
-                SensorManager.SENSOR_DELAY_UI
+                SensorManager.SENSOR_DELAY_GAME
             )
         }
 

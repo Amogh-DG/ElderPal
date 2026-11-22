@@ -107,7 +107,7 @@ fun EmergencyAlertSentView(
             )
 
             Text(
-                text = "Please stay where you are. Help is on\nthe way.",
+                text = "Your family has been told. Please stay where you are.",
                 style = ElderPalTypography.body.copy(fontSize = 20.sp, lineHeight = 30.sp),
                 color = TextSecondary,
                 textAlign = TextAlign.Center
@@ -295,7 +295,7 @@ fun NotifiedContactCard(
                 )
             }
 
-            // Delivery Status Badge matching fall-alert-sent.png ("Told", "In app", or "Failed")
+            // Delivery Status Badge matching fall-alert-sent.png ("Sent", "Message ready", or "Failed")
             when (contactStatus.smsStatus) {
                 SmsDeliveryStatus.SENT -> {
                     Surface(
@@ -315,7 +315,7 @@ fun NotifiedContactCard(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Told",
+                                text = "Sent",
                                 style = ElderPalTypography.small.copy(
                                     color = SuccessGreen,
                                     fontWeight = FontWeight.Bold,
@@ -343,7 +343,7 @@ fun NotifiedContactCard(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "In app",
+                                text = "Message ready",
                                 style = ElderPalTypography.small.copy(
                                     color = TealPrimary,
                                     fontWeight = FontWeight.Bold,

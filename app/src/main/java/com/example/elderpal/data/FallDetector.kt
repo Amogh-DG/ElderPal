@@ -23,16 +23,21 @@ class FallDetector(
 
         // 2. Impact Threshold (g):
         // Upon striking the ground, rapid deceleration causes a high-G kinetic spike.
-        // A force magnitude > 2.6g (> ~25.5 m/s²) indicates a sudden hard impact.
-        const val IMPACT_THRESHOLD_G = 2.6f
+        // Lowered to 1.8g (~17.6 m/s²) to catch softer impacts such as falling onto a bed or couch,
+        // while still filtering out gentle phone handling (typical resting handling stays below 1.5g).
+        const val IMPACT_THRESHOLD_G = 1.8f
 
         // 3. Impact Window (ms):
-        // An impact must follow within 1000 milliseconds of free-fall for it to be a fall event.
-        const val IMPACT_WINDOW_MS = 1000L
+        // Impact must follow within 1500 milliseconds of free-fall detection.
+        // Widened from 1000 ms to allow for slower, softer falls (e.g. stumbling and sliding)
+        // where the deceleration peak arrives a little later than a straight vertical drop.
+        const val IMPACT_WINDOW_MS = 1500L
 
         // 4. Inactivity Window (ms):
-        // Following an impact, an injured elder will typically remain motionless for at least 1.5 seconds.
-        const val INACTIVITY_WINDOW_MS = 1500L
+        // Following an impact, the stillness confirmation window is 1000 ms.
+        // Shortened from 1500 ms so a fallen person who stays still for just 1 second triggers the alert;
+        // the 10-second countdown on-screen is the primary protection against false alarms.
+        const val INACTIVITY_WINDOW_MS = 1000L
 
         // 5. Inactivity Variance (g):
         // During the stillness window, deviation from resting 1.0g must stay below 0.4g.

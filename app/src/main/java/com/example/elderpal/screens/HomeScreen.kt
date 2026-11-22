@@ -501,6 +501,18 @@ private fun FallDetectionCard(
                 )
             }
 
+            // Divider and label clearly marking the button as a demo/test tool only
+            androidx.compose.material3.HorizontalDivider(
+                color = BorderCard,
+                thickness = 1.dp
+            )
+            Text(
+                text = "Demo tools",
+                style = ElderPalTypography.small.copy(fontSize = 15.sp),
+                color = TextSecondary,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+
             // Demo test button: Simulate fall
             Box(
                 modifier = Modifier
