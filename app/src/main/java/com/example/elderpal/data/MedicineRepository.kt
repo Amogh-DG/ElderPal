@@ -36,6 +36,12 @@ class MedicineRepository(private val context: Context) {
         deserializeDoseLog(json)
     }
 
+    // Flow emitting the most recently taken dose logged today, or null if none
+    val lastTakenDoseToday: Flow<DoseLogEntry?> = doseLog.map { logList ->
+        val todayStr = LocalDate.now().toString()
+        logList.lastOrNull { it.date == todayStr }
+    }
+
     // Flow of all scheduled doses for today with real status (Upcoming, Taken, Missed)
     val todayDoses: Flow<List<ScheduledDose>> = combine(medicines, doseLog) { medicineList, logList ->
         val todayStr = LocalDate.now().toString()
@@ -121,6 +127,15 @@ class MedicineRepository(private val context: Context) {
         val json = preferences[doseLogKey] ?: ""
         val allLogs = deserializeDoseLog(json)
         return allLogs.reversed().take(limit)
+    }
+
+    // Retrieves the most recently taken dose logged today, or null if none
+    suspend fun getLastTakenDoseToday(): DoseLogEntry? {
+        val todayStr = LocalDate.now().toString()
+        val preferences = context.dataStore.data.first()
+        val json = preferences[doseLogKey] ?: ""
+        val allLogs = deserializeDoseLog(json)
+        return allLogs.lastOrNull { it.date == todayStr }
     }
 
     // Helper to calculate the next upcoming dose relative to current clock time

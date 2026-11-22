@@ -42,19 +42,29 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.font.FontWeight
+import kotlinx.coroutines.launch
 import com.example.elderpal.R
 import com.example.elderpal.data.MedicineRepository
 import com.example.elderpal.ui.theme.BackgroundWarmCream
+import com.example.elderpal.ui.theme.BorderCard
+import com.example.elderpal.ui.theme.BorderInput
 import com.example.elderpal.ui.theme.DangerRed
 import com.example.elderpal.ui.theme.DangerRedShadow
 import com.example.elderpal.ui.theme.ElderPalShapes
 import com.example.elderpal.ui.theme.ElderPalTheme
 import com.example.elderpal.ui.theme.ElderPalTypography
+import com.example.elderpal.ui.theme.SuccessGreen
 import com.example.elderpal.ui.theme.SurfaceWhite
 import com.example.elderpal.ui.theme.TealPrimary
 import com.example.elderpal.ui.theme.TealPrimaryTint
 import com.example.elderpal.ui.theme.TextPrimary
+import com.example.elderpal.ui.theme.TextSecondary
+import com.example.elderpal.ui.theme.WarningAmberText
 
 @Composable
 fun HomeScreen(
@@ -63,12 +73,33 @@ fun HomeScreen(
     onScanPrescriptionClick: () -> Unit = {},
     onCheckMedicineClick: () -> Unit = {},
     onEmergencyContactsClick: () -> Unit = {},
-    onSosClick: () -> Unit = {}
+    onSosClick: () -> Unit = {},
+    onSimulateFallClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val repository = remember { MedicineRepository(context) }
+    val fallPrefs = remember { com.example.elderpal.data.FallDetectionPreferences(context) }
+    val coroutineScope = rememberCoroutineScope()
+
     val todayDoses by repository.todayDoses.collectAsState(initial = emptyList())
     val nextDose = remember(todayDoses) { repository.findNextDose(todayDoses) }
+    val isFallDetectionEnabled by fallPrefs.isFallDetectionEnabled.collectAsState(initial = false)
+
+    var showMotionExplainer by remember { mutableStateOf(false) }
+
+    if (showMotionExplainer) {
+        MotionPermissionExplainer(
+            onAllowClick = {
+                showMotionExplainer = false
+                coroutineScope.launch {
+                    fallPrefs.setFallDetectionEnabled(true)
+                }
+            },
+            onDismissClick = {
+                showMotionExplainer = false
+            }
+        )
+    }
 
     val scrollState = rememberScrollState()
 
@@ -133,6 +164,21 @@ fun HomeScreen(
                 onClick = onEmergencyContactsClick
             )
         }
+
+        // Fall detection card with on/off switch and simulate fall test button
+        FallDetectionCard(
+            isEnabled = isFallDetectionEnabled,
+            onToggle = { enable ->
+                if (enable) {
+                    showMotionExplainer = true
+                } else {
+                    coroutineScope.launch {
+                        fallPrefs.setFallDetectionEnabled(false)
+                    }
+                }
+            },
+            onSimulateFallClick = onSimulateFallClick
+        )
 
         Spacer(modifier = Modifier.height(4.dp))
 
@@ -381,6 +427,112 @@ private fun SosEmergencyBar(
                         style = ElderPalTypography.label.copy(
                             color = Color.White,
                             fontSize = 20.sp
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FallDetectionCard(
+    isEnabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onSimulateFallClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = ElderPalShapes.card,
+        colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
+        border = BorderStroke(2.dp, BorderCard)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(if (isEnabled) TealPrimaryTint else Color(0xFFF0EBE1)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_motion),
+                        contentDescription = null,
+                        tint = if (isEnabled) TealPrimary else TextSecondary,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Fall detection",
+                        style = ElderPalTypography.title.copy(fontSize = 22.sp),
+                        color = TextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (isEnabled) "Active in background" else "Turned off",
+                        style = ElderPalTypography.small.copy(fontSize = 16.sp),
+                        color = if (isEnabled) SuccessGreen else TextSecondary
+                    )
+                }
+
+                androidx.compose.material3.Switch(
+                    checked = isEnabled,
+                    onCheckedChange = onToggle,
+                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = TealPrimary,
+                        uncheckedThumbColor = SurfaceWhite,
+                        uncheckedTrackColor = BorderInput
+                    )
+                )
+            }
+
+            // Demo test button: Simulate fall
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .clip(ElderPalShapes.button)
+                    .background(Color(0xFFF9F6F0))
+                    .border(2.dp, BorderCard, ElderPalShapes.button)
+                    .clickable(
+                        onClick = onSimulateFallClick,
+                        role = Role.Button
+                    )
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = "Simulate a fall to test the emergency alert flow"
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_warning),
+                        contentDescription = null,
+                        tint = WarningAmberText,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Simulate fall (Test)",
+                        style = ElderPalTypography.title.copy(
+                            color = TextPrimary,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     )
                 }

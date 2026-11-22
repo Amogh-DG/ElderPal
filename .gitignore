@@ -13,4 +13,4 @@ design/
 .externalNativeBuild
 .cxx
 .DS_Store
-remote_setup.py
+bro.py

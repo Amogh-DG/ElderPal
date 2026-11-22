@@ -327,7 +327,10 @@ fun CheckMedicineScreen(
                         .background(SurfaceWhite)
                         .clickable(
                             onClick = {
-                                capturedBitmap?.let { onUsePhotoClick(it) }
+                                capturedBitmap?.let {
+                                    com.example.elderpal.ai.CapturedImageHolder.currentBitmap = it
+                                    onUsePhotoClick(it)
+                                }
                             },
                             role = Role.Button
                         )

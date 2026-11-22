@@ -1,4 +1,4 @@
-// Placeholder loading screen shown while a captured medicine label is being processed.
+// Displays the loading screen while Gemini verifies the medicine label, allowing cancellation.
 package com.example.elderpal.screens
 
 import androidx.compose.foundation.background
@@ -18,9 +18,13 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -30,6 +34,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.elderpal.R
+import com.example.elderpal.ai.CapturedImageHolder
+import com.example.elderpal.ai.CheckResultType
+import com.example.elderpal.ai.LabelCheckResult
+import com.example.elderpal.ai.MedicineLabelChecker
 import com.example.elderpal.ui.theme.BackgroundWarmCream
 import com.example.elderpal.ui.theme.BorderInput
 import com.example.elderpal.ui.theme.ElderPalShapes
@@ -39,12 +47,38 @@ import com.example.elderpal.ui.theme.TealPrimary
 import com.example.elderpal.ui.theme.TealPrimaryTint
 import com.example.elderpal.ui.theme.TextPrimary
 import com.example.elderpal.ui.theme.TextSecondary
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 @Composable
 fun CheckMedicineLoadingScreen(
+    onResultReady: (LabelCheckResult) -> Unit,
     onCancelClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val checker = remember { MedicineLabelChecker(context) }
+
+    LaunchedEffect(Unit) {
+        val bitmap = CapturedImageHolder.currentBitmap
+        if (bitmap == null) {
+            onResultReady(
+                LabelCheckResult(
+                    type = CheckResultType.UNSURE,
+                    reason = "No label photo found. Please try again."
+                )
+            )
+            return@LaunchedEffect
+        }
+
+        val checkJob: Job = coroutineScope.launch {
+            val result = checker.checkMedicineLabel(bitmap)
+            CapturedImageHolder.latestResult = result
+            onResultReady(result)
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -116,7 +150,10 @@ fun CheckMedicineLoadingScreen(
                 .background(SurfaceWhite)
                 .border(3.dp, BorderInput, ElderPalShapes.button)
                 .clickable(
-                    onClick = onCancelClick,
+                    onClick = {
+                        CapturedImageHolder.clear()
+                        onCancelClick()
+                    },
                     role = Role.Button
                 )
                 .semantics {

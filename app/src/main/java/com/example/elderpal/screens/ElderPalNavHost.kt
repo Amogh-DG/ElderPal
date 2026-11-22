@@ -2,6 +2,8 @@
 package com.example.elderpal.screens
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
@@ -9,7 +11,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.example.elderpal.ai.CapturedImageHolder
+import com.example.elderpal.ai.CheckResultType
 import com.example.elderpal.data.DoseReminderScheduler
+import com.example.elderpal.data.MedicineRepository
+import kotlinx.coroutines.launch
 
 object ElderPalRoutes {
     const val HOME = "home"
@@ -23,6 +29,13 @@ object ElderPalRoutes {
     const val SCAN_PRESCRIPTION = "scan_prescription"
     const val REMINDER = "reminder"
     const val CHECK_MEDICINE_LOADING = "check_medicine_loading"
+    const val RESULT_OK = "result_ok"
+    const val RESULT_WRONG = "result_wrong"
+    const val RESULT_NOT_DUE = "result_not_due"
+    const val RESULT_NOT_DUE_CONFIRM = "result_not_due_confirm"
+    const val RESULT_UNSURE = "result_unsure"
+    const val ADD_CONTACT = "add_contact"
+    const val ALERT_PREVIEW = "alert_preview"
 }
 
 @Composable
@@ -51,6 +64,9 @@ fun ElderPalNavHost(
                 },
                 onSosClick = {
                     navController.navigate(ElderPalRoutes.SOS)
+                },
+                onSimulateFallClick = {
+                    navController.navigate(ElderPalRoutes.FALL_ALERT)
                 }
             )
         }
@@ -88,25 +104,217 @@ fun ElderPalNavHost(
 
         composable(ElderPalRoutes.CHECK_MEDICINE_LOADING) {
             CheckMedicineLoadingScreen(
-                onCancelClick = { navController.popBackStack() }
+                onResultReady = { result ->
+                    when (result.type) {
+                        CheckResultType.OK -> {
+                            navController.navigate(ElderPalRoutes.RESULT_OK) {
+                                popUpTo(ElderPalRoutes.CHECK_MEDICINE) { inclusive = true }
+                            }
+                        }
+                        CheckResultType.WRONG -> {
+                            navController.navigate(ElderPalRoutes.RESULT_WRONG) {
+                                popUpTo(ElderPalRoutes.CHECK_MEDICINE) { inclusive = true }
+                            }
+                        }
+                        CheckResultType.NOT_DUE -> {
+                            navController.navigate(ElderPalRoutes.RESULT_NOT_DUE) {
+                                popUpTo(ElderPalRoutes.CHECK_MEDICINE) { inclusive = true }
+                            }
+                        }
+                        CheckResultType.UNSURE -> {
+                            navController.navigate(ElderPalRoutes.RESULT_UNSURE) {
+                                popUpTo(ElderPalRoutes.CHECK_MEDICINE) { inclusive = true }
+                            }
+                        }
+                    }
+                },
+                onCancelClick = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(ElderPalRoutes.RESULT_OK) {
+            val context = LocalContext.current
+            val repository = remember { MedicineRepository(context) }
+            val coroutineScope = rememberCoroutineScope()
+            val result = CapturedImageHolder.latestResult
+            val medName = result?.matchedMedicine?.name ?: result?.detectedLabelName ?: "Medicine"
+            val dose = result?.matchedMedicine?.dose ?: "1 tablet"
+            val scheduledTime = result?.matchedScheduledTime ?: ""
+
+            ResultOkScreen(
+                medicineName = medName,
+                dose = dose,
+                onBack = {
+                    CapturedImageHolder.clear()
+                    navController.popBackStack()
+                },
+                onMarkAsTakenClick = {
+                    val medId = result?.matchedMedicine?.id
+                    if (medId != null && scheduledTime.isNotBlank()) {
+                        coroutineScope.launch {
+                            repository.markDoseTaken(medId, medName, scheduledTime)
+                            CapturedImageHolder.clear()
+                            navController.navigate(ElderPalRoutes.SCHEDULE) {
+                                popUpTo(ElderPalRoutes.HOME)
+                            }
+                        }
+                    } else {
+                        CapturedImageHolder.clear()
+                        navController.popBackStack()
+                    }
+                }
+            )
+        }
+
+        composable(ElderPalRoutes.RESULT_WRONG) {
+            ResultWrongScreen(
+                onBack = {
+                    CapturedImageHolder.clear()
+                    navController.popBackStack()
+                },
+                onCallFamilyClick = {
+                    navController.navigate(ElderPalRoutes.CONTACTS)
+                },
+                onCheckAnotherClick = {
+                    CapturedImageHolder.clear()
+                    navController.navigate(ElderPalRoutes.CHECK_MEDICINE) {
+                        popUpTo(ElderPalRoutes.HOME)
+                    }
+                }
+            )
+        }
+
+        composable(ElderPalRoutes.RESULT_NOT_DUE) {
+            val result = CapturedImageHolder.latestResult
+            val medName = result?.matchedMedicine?.name ?: result?.detectedLabelName ?: "Medicine"
+            val dose = result?.matchedMedicine?.dose ?: "1 tablet"
+            val scheduledTime = result?.matchedScheduledTime ?: ""
+
+            ResultNotDueScreen(
+                medicineName = medName,
+                dose = dose,
+                scheduledTime = scheduledTime,
+                onBack = {
+                    CapturedImageHolder.clear()
+                    navController.popBackStack()
+                },
+                onWaitClick = {
+                    CapturedImageHolder.clear()
+                    navController.navigate(ElderPalRoutes.SCHEDULE) {
+                        popUpTo(ElderPalRoutes.HOME)
+                    }
+                },
+                onTakeAnywayClick = {
+                    navController.navigate(ElderPalRoutes.RESULT_NOT_DUE_CONFIRM)
+                }
+            )
+        }
+
+        composable(ElderPalRoutes.RESULT_NOT_DUE_CONFIRM) {
+            val context = LocalContext.current
+            val repository = remember { MedicineRepository(context) }
+            val coroutineScope = rememberCoroutineScope()
+            val result = CapturedImageHolder.latestResult
+            val medName = result?.matchedMedicine?.name ?: result?.detectedLabelName ?: "Medicine"
+            val scheduledTime = result?.matchedScheduledTime ?: ""
+
+            ResultNotDueConfirmScreen(
+                medicineName = medName,
+                scheduledTime = scheduledTime,
+                onBack = { navController.popBackStack() },
+                onConfirmTakeClick = {
+                    val medId = result?.matchedMedicine?.id
+                    if (medId != null && scheduledTime.isNotBlank()) {
+                        coroutineScope.launch {
+                            repository.markDoseTaken(medId, medName, scheduledTime)
+                            CapturedImageHolder.clear()
+                            navController.navigate(ElderPalRoutes.SCHEDULE) {
+                                popUpTo(ElderPalRoutes.HOME)
+                            }
+                        }
+                    } else {
+                        CapturedImageHolder.clear()
+                        navController.popBackStack()
+                    }
+                }
+            )
+        }
+
+        composable(ElderPalRoutes.RESULT_UNSURE) {
+            val result = CapturedImageHolder.latestResult
+            ResultUnsureScreen(
+                reason = result?.reason ?: "",
+                onBack = {
+                    CapturedImageHolder.clear()
+                    navController.popBackStack()
+                },
+                onTryAgainClick = {
+                    CapturedImageHolder.clear()
+                    navController.navigate(ElderPalRoutes.CHECK_MEDICINE) {
+                        popUpTo(ElderPalRoutes.HOME)
+                    }
+                }
             )
         }
 
         composable(ElderPalRoutes.CONTACTS) {
             ContactsScreen(
+                onBack = { navController.popBackStack() },
+                onAddContactClick = {
+                    navController.navigate(ElderPalRoutes.ADD_CONTACT)
+                },
+                onEditContactClick = { contactId ->
+                    navController.navigate("${ElderPalRoutes.ADD_CONTACT}?contactId=$contactId")
+                },
+                onPreviewAlertClick = {
+                    navController.navigate(ElderPalRoutes.ALERT_PREVIEW)
+                },
+                onSosClick = {
+                    navController.navigate(ElderPalRoutes.SOS)
+                }
+            )
+        }
+
+        composable(ElderPalRoutes.ALERT_PREVIEW) {
+            AlertPreviewScreen(
                 onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = "${ElderPalRoutes.ADD_CONTACT}?contactId={contactId}",
+            arguments = listOf(
+                navArgument("contactId") {
+                    defaultValue = ""
+                    nullable = true
+                }
+            )
+        ) { backStackEntry ->
+            val contactId = backStackEntry.arguments?.getString("contactId")
+            AddContactScreen(
+                contactId = contactId,
+                onBack = { navController.popBackStack() },
+                onSaved = { navController.popBackStack() },
+                onDeleted = { navController.popBackStack() },
+                onSosClick = {
+                    navController.navigate(ElderPalRoutes.SOS)
+                }
             )
         }
 
         composable(ElderPalRoutes.SOS) {
             SosScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onNavigateToContacts = { navController.navigate(ElderPalRoutes.CONTACTS) }
             )
         }
 
         composable(ElderPalRoutes.FALL_ALERT) {
             FallAlertScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onNavigateToContacts = { navController.navigate(ElderPalRoutes.CONTACTS) }
             )
         }
 

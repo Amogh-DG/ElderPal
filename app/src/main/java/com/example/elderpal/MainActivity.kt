@@ -30,7 +30,12 @@ class MainActivity : ComponentActivity() {
         // Initialize high-priority medicine notification channel
         DoseReminderScheduler.createNotificationChannel(applicationContext)
 
-        checkIntentForReminder(intent)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        }
+
+        handleIncomingIntent(intent)
 
         setContent {
             ElderPalTheme {
@@ -60,11 +65,16 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        checkIntentForReminder(intent)
+        handleIncomingIntent(intent)
     }
 
-    private fun checkIntentForReminder(intent: Intent?) {
-        if (intent?.getStringExtra("destination") == "reminder") {
+    private fun handleIncomingIntent(intent: Intent?) {
+        if (intent == null) return
+        if (intent.action == com.example.elderpal.data.FallDetectionService.ACTION_FALL_ALERT) {
+            pendingRoute.value = ElderPalRoutes.FALL_ALERT
+            return
+        }
+        if (intent.getStringExtra("destination") == "reminder") {
             val medId = intent.getStringExtra("medicine_id") ?: ""
             val medName = intent.getStringExtra("medicine_name") ?: "Medicine"
             val dose = intent.getStringExtra("dose") ?: ""
