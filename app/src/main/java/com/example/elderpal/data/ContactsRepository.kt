@@ -84,6 +84,13 @@ class ContactsRepository(private val context: Context) {
         }
     }
 
+    // Erases all contacts (used by demo reset)
+    suspend fun clearAll() {
+        context.contactsDataStore.edit { preferences ->
+            preferences[contactsKey] = "[]"
+        }
+    }
+
     private fun serializeContacts(contacts: List<Contact>): String {
         val array = JSONArray()
         for (c in contacts) {

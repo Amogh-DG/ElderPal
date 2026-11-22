@@ -29,6 +29,7 @@ class FallDetectionService : Service() {
 
     companion object {
         const val CHANNEL_ID = "fall_detection_foreground_channel"
+        const val ALERT_CHANNEL_ID = "fall_alert_high_priority_channel"
         const val NOTIFICATION_ID = 2001
         const val ALERT_NOTIFICATION_ID = 2002
         const val ACTION_FALL_ALERT = "com.example.elderpal.ACTION_FALL_ALERT"
@@ -36,6 +37,22 @@ class FallDetectionService : Service() {
         // Global reference so the UI can notify the detector of cancellation or alert completion
         var activeDetector: FallDetector? = null
             private set
+
+        fun isRunning(): Boolean = activeDetector != null
+
+        fun start(context: Context) {
+            val intent = Intent(context, FallDetectionService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
+
+        fun stop(context: Context) {
+            val intent = Intent(context, FallDetectionService::class.java)
+            context.stopService(intent)
+        }
     }
 
     override fun onCreate() {
@@ -113,7 +130,7 @@ class FallDetectionService : Service() {
     private fun launchFullScreenFallAlert() {
         val fallIntent = Intent(this, MainActivity::class.java).apply {
             action = ACTION_FALL_ALERT
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
 
         val fullScreenPendingIntent = PendingIntent.getActivity(
@@ -123,24 +140,45 @@ class FallDetectionService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val alertNotification = NotificationCompat.Builder(this, CHANNEL_ID)
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        val canUseFullScreen = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            notificationManager.canUseFullScreenIntent()
+        } else {
+            true
+        }
+
+        val contentText = if (canUseFullScreen) {
+            "Suspected fall detected. Confirm you are safe."
+        } else {
+            "Suspected fall detected. Tap to open and confirm you are safe."
+        }
+
+        val alertNotification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_warning)
             .setContentTitle("Are you okay?")
-            .setContentText("Suspected fall detected. Tap to confirm you are safe.")
+            .setContentText(contentText)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setFullScreenIntent(fullScreenPendingIntent, true)
+            .setContentIntent(fullScreenPendingIntent)
             .setAutoCancel(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
             .build()
 
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(ALERT_NOTIFICATION_ID, alertNotification)
 
-        // Attempt direct launch if allowed
-        try {
-            startActivity(fallIntent)
-        } catch (e: Exception) {
-            // Full-screen intent notification serves as fallback
+        // If the app is already in the foreground, open the countdown directly
+        if (MainActivity.isForeground) {
+            MainActivity.instance?.navigateToFallAlert()
+        } else {
+            // Attempt direct launch if allowed
+            try {
+                startActivity(fallIntent)
+            } catch (e: Exception) {
+                // Full-screen intent notification serves as fallback
+            }
         }
     }
 
@@ -155,7 +193,7 @@ class FallDetectionService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_warning)
             .setContentTitle("Fall detected: No contacts saved")
             .setContentText("Please add an emergency contact so ElderPal can send alerts.")
@@ -170,7 +208,9 @@ class FallDetectionService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            val serviceChannel = NotificationChannel(
                 CHANNEL_ID,
                 "Fall Detection Service",
                 NotificationManager.IMPORTANCE_LOW
@@ -178,8 +218,20 @@ class FallDetectionService : Service() {
                 description = "Keeps fall detection active in the background"
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(channel)
+            notificationManager.createNotificationChannel(serviceChannel)
+
+            val alertChannel = NotificationChannel(
+                ALERT_CHANNEL_ID,
+                "Fall Alerts",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Critical alerts when a suspected fall is detected"
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                enableVibration(true)
+                enableLights(true)
+                setBypassDnd(true)
+            }
+            notificationManager.createNotificationChannel(alertChannel)
         }
     }
 

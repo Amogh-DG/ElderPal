@@ -61,6 +61,14 @@ class FallDetector(
     var isAlertActive: Boolean = false
     var lastCancelledTimestamp: Long = 0L
 
+    var currentStage: String = "waiting"
+        private set
+    var currentG: Float = 1.0f
+        private set
+
+    // Real-time debug callback for live in-memory UI readout (not logged or persisted)
+    var onSensorSample: ((g: Float, stage: String) -> Unit)? = null
+
     fun notifyCancelled() {
         lastCancelledTimestamp = System.currentTimeMillis()
         reset()
@@ -70,23 +78,30 @@ class FallDetector(
         currentState = State.IDLE
         freeFallTimestamp = 0L
         impactTimestamp = 0L
+        currentStage = "waiting"
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
         if (event == null || event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
 
-        // 1. Check if an alert is already in progress or if in cool-down
-        val now = System.currentTimeMillis()
-        if (isAlertActive || (now - lastCancelledTimestamp < COOL_DOWN_MS)) {
-            return
-        }
-
-        // 2. Compute total acceleration magnitude in units of g (Earth standard gravity)
+        // Compute total acceleration magnitude in units of g (Earth standard gravity)
         val ax = event.values[0]
         val ay = event.values[1]
         val az = event.values[2]
         val magnitudeMs2 = sqrt(ax * ax + ay * ay + az * az)
         val magnitudeG = magnitudeMs2 / SensorManager.GRAVITY_EARTH
+        currentG = magnitudeG
+
+        val now = System.currentTimeMillis()
+
+        // 1. Check if an alert is already in progress or if in cool-down
+        if (isAlertActive || (now - lastCancelledTimestamp < COOL_DOWN_MS)) {
+            val cooldownRemaining = ((COOL_DOWN_MS - (now - lastCancelledTimestamp)) / 1000).coerceAtLeast(0)
+            val stage = if (isAlertActive) "triggered" else "waiting"
+            currentStage = stage
+            onSensorSample?.invoke(magnitudeG, stage)
+            return
+        }
 
         when (currentState) {
             State.IDLE -> {
@@ -94,16 +109,23 @@ class FallDetector(
                 if (magnitudeG < FREE_FALL_THRESHOLD_G) {
                     currentState = State.FREE_FALL_DETECTED
                     freeFallTimestamp = now
+                    currentStage = "free-fall seen"
+                } else {
+                    currentStage = "waiting"
                 }
             }
             State.FREE_FALL_DETECTED -> {
                 // If too much time has passed without an impact, reset to IDLE
                 if (now - freeFallTimestamp > IMPACT_WINDOW_MS) {
                     currentState = State.IDLE
+                    currentStage = "waiting"
                 } else if (magnitudeG > IMPACT_THRESHOLD_G) {
                     // Phase 2: Impact detected within window
                     currentState = State.IMPACT_DETECTED
                     impactTimestamp = now
+                    currentStage = "impact seen"
+                } else {
+                    currentStage = "free-fall seen"
                 }
             }
             State.IMPACT_DETECTED -> {
@@ -114,13 +136,21 @@ class FallDetector(
                 if (deviation > INACTIVITY_DEVIATION_THRESHOLD_G) {
                     // Active continuous motion immediately after impact -> likely normal activity (e.g. running or tossing phone)
                     currentState = State.IDLE
+                    currentStage = "waiting"
                 } else if (timeSinceImpact >= INACTIVITY_WINDOW_MS) {
                     // Inactivity confirmed! Suspected fall triggered
+                    currentStage = "triggered"
+                    onSensorSample?.invoke(magnitudeG, "triggered")
                     reset()
                     onFallDetected()
+                    return
+                } else {
+                    currentStage = if (timeSinceImpact > 200L) "inactive" else "impact seen"
                 }
             }
         }
+
+        onSensorSample?.invoke(magnitudeG, currentStage)
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {

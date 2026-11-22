@@ -10,7 +10,12 @@ import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
 import android.telephony.SmsManager
+import android.util.Base64
 import androidx.core.content.ContextCompat
+import com.example.elderpal.BuildConfig
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
@@ -157,6 +162,15 @@ class EmergencyAlertManager(private val context: Context) {
             }
         }
 
+        // 3. Optional Twilio voice calls to family contacts (off main thread, never delays SMS or direct call)
+        triggerTwilioVoiceCallsAsync(
+            contacts = contacts,
+            primaryContact = primaryContact,
+            alertType = alertType,
+            currentTime = now,
+            lastTakenDose = lastTakenDose
+        )
+
         return AlertDispatchReport(
             contactStatuses = contactStatuses,
             primaryContact = primaryContact,
@@ -244,7 +258,149 @@ class EmergencyAlertManager(private val context: Context) {
         }
     }
 
+    // Dispatches optional spoken Twilio voice calls to non-primary family contacts asynchronously
+    private fun triggerTwilioVoiceCallsAsync(
+        contacts: List<Contact>,
+        primaryContact: Contact?,
+        alertType: AlertType,
+        currentTime: LocalTime,
+        lastTakenDose: DoseLogEntry?
+    ) {
+        val accountSid = BuildConfig.TWILIO_ACCOUNT_SID.trim()
+        val authToken = BuildConfig.TWILIO_AUTH_TOKEN.trim()
+        val fromNumber = BuildConfig.TWILIO_FROM_NUMBER.trim()
+
+        // Feature is silently off if any credential is missing or blank
+        if (accountSid.isBlank() || authToken.isBlank() || fromNumber.isBlank()) {
+            return
+        }
+
+        val alsoCallFirst = isVoiceCallAlsoFirstContact(context)
+        val contactsToCall = contacts.filter { contact ->
+            if (alsoCallFirst) {
+                true
+            } else {
+                contact != primaryContact && !contact.isCallFirst
+            }
+        }
+
+        if (contactsToCall.isEmpty()) {
+            return
+        }
+
+        val spokenText = AlertMessageBuilder.buildSpokenAlertMessage(
+            alertType = alertType,
+            currentTime = currentTime,
+            lastTakenDose = lastTakenDose
+        )
+        val twiml = AlertMessageBuilder.buildInlineTwiml(spokenText)
+
+        // Run network call off the main thread with short timeout
+        Thread {
+            val calledNumbers = mutableSetOf<String>()
+            for (contact in contactsToCall) {
+                val normalized = normalizePhoneNumber(contact.phoneNumber)
+                val digits = normalized.filter { it.isDigit() }
+
+                // Guard: Never auto-dial emergency numbers
+                if (digits in ContactsRepository.EMERGENCY_NUMBERS) {
+                    continue
+                }
+
+                // Never place more than one voice call per contact per alert
+                if (normalized.isBlank() || !calledNumbers.add(normalized)) {
+                    continue
+                }
+
+                makeTwilioCallWithSingleRetry(
+                    accountSid = accountSid,
+                    authToken = authToken,
+                    fromNumber = fromNumber,
+                    toNumber = normalized,
+                    twiml = twiml
+                )
+            }
+        }.start()
+    }
+
+    // Attempts a Twilio call and retries at most once if it fails
+    private fun makeTwilioCallWithSingleRetry(
+        accountSid: String,
+        authToken: String,
+        fromNumber: String,
+        toNumber: String,
+        twiml: String
+    ): Boolean {
+        val success = executeTwilioCall(accountSid, authToken, fromNumber, toNumber, twiml)
+        if (!success) {
+            // Do not retry more than once
+            return executeTwilioCall(accountSid, authToken, fromNumber, toNumber, twiml)
+        }
+        return true
+    }
+
+    // Executes the HTTP POST request to Twilio Calls REST API using standard HttpURLConnection
+    private fun executeTwilioCall(
+        accountSid: String,
+        authToken: String,
+        fromNumber: String,
+        toNumber: String,
+        twiml: String
+    ): Boolean {
+        var connection: HttpURLConnection? = null
+        return try {
+            val endpointUrl = URL("https://api.twilio.com/2010-04-01/Accounts/$accountSid/Calls.json")
+            connection = (endpointUrl.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 5000 // 5 seconds
+                readTimeout = 5000    // 5 seconds
+                doOutput = true
+                instanceFollowRedirects = false
+
+                val userPass = "$accountSid:$authToken"
+                val basicAuth = "Basic " + Base64.encodeToString(userPass.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+                setRequestProperty("Authorization", basicAuth)
+                setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
+            }
+
+            val postData = buildString {
+                append("To=").append(URLEncoder.encode(toNumber, "UTF-8"))
+                append("&From=").append(URLEncoder.encode(fromNumber, "UTF-8"))
+                append("&Twiml=").append(URLEncoder.encode(twiml, "UTF-8"))
+            }
+
+            connection.outputStream.use { os ->
+                os.write(postData.toByteArray(Charsets.UTF_8))
+                os.flush()
+            }
+
+            val code = connection.responseCode
+            // HTTP 201 Created indicates Twilio queued/initiated the call
+            code in 200..299
+        } catch (e: Exception) {
+            // Never log credentials, phone numbers, or message text
+            false
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
     companion object {
+        private const val PREFS_NAME = "elderpal_voice_call_prefs"
+        private const val KEY_VOICE_CALL_ALSO_FIRST = "voice_call_also_first_contact"
+
+        fun isVoiceCallAlsoFirstContact(context: Context): Boolean {
+            return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_VOICE_CALL_ALSO_FIRST, false)
+        }
+
+        fun setVoiceCallAlsoFirstContact(context: Context, enabled: Boolean) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_VOICE_CALL_ALSO_FIRST, enabled)
+                .apply()
+        }
+
         // Normalizes phone numbers by stripping whitespace, hyphens, brackets, and periods.
         // If a number does not contain an international country code (no leading '+'), it is kept as entered;
         // standard Android telephony automatically routes domestic numbers according to the active SIM carrier.

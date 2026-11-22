@@ -40,6 +40,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,7 +50,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.launch
 import com.example.elderpal.R
+import com.example.elderpal.data.FallDetectionService
 import com.example.elderpal.data.MedicineRepository
+import com.example.elderpal.data.PermissionManager
 import com.example.elderpal.ui.theme.BackgroundWarmCream
 import com.example.elderpal.ui.theme.BorderCard
 import com.example.elderpal.ui.theme.BorderInput
@@ -74,7 +77,7 @@ fun HomeScreen(
     onCheckMedicineClick: () -> Unit = {},
     onEmergencyContactsClick: () -> Unit = {},
     onSosClick: () -> Unit = {},
-    onSimulateFallClick: () -> Unit = {}
+    onLogoClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val repository = remember { MedicineRepository(context) }
@@ -85,18 +88,29 @@ fun HomeScreen(
     val nextDose = remember(todayDoses) { repository.findNextDose(todayDoses) }
     val isFallDetectionEnabled by fallPrefs.isFallDetectionEnabled.collectAsState(initial = false)
 
+    // Ensure the background service state matches the saved preference on app launch/reopen
+    LaunchedEffect(isFallDetectionEnabled) {
+        if (isFallDetectionEnabled && !FallDetectionService.isRunning()) {
+            FallDetectionService.start(context)
+        } else if (!isFallDetectionEnabled && FallDetectionService.isRunning()) {
+            FallDetectionService.stop(context)
+        }
+    }
+
     var showMotionExplainer by remember { mutableStateOf(false) }
 
     if (showMotionExplainer) {
         MotionPermissionExplainer(
             onAllowClick = {
                 showMotionExplainer = false
+                FallDetectionService.start(context)
                 coroutineScope.launch {
                     fallPrefs.setFallDetectionEnabled(true)
                 }
             },
             onDismissClick = {
                 showMotionExplainer = false
+                PermissionManager.setPermissionRefused(context, PermissionManager.KEY_MOTION_REFUSED, true)
             }
         )
     }
@@ -112,7 +126,7 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // App header with heart badge and greeting
-        HomeHeader()
+        HomeHeader(onLogoClick = onLogoClick)
 
         // Card showing next medicine due from stored data - tap opens Schedule
         if (todayDoses.isEmpty()) {
@@ -165,19 +179,28 @@ fun HomeScreen(
             )
         }
 
-        // Fall detection card with on/off switch and simulate fall test button
+        // Fall detection card with on/off switch
         FallDetectionCard(
             isEnabled = isFallDetectionEnabled,
             onToggle = { enable ->
                 if (enable) {
-                    showMotionExplainer = true
+                    val alreadyRefused = PermissionManager.isPermissionRefused(context, PermissionManager.KEY_MOTION_REFUSED)
+                    val firstRunDone = PermissionManager.isFirstRunCompleted(context)
+                    if (!firstRunDone && !alreadyRefused) {
+                        showMotionExplainer = true
+                    } else {
+                        FallDetectionService.start(context)
+                        coroutineScope.launch {
+                            fallPrefs.setFallDetectionEnabled(true)
+                        }
+                    }
                 } else {
+                    FallDetectionService.stop(context)
                     coroutineScope.launch {
                         fallPrefs.setFallDetectionEnabled(false)
                     }
                 }
-            },
-            onSimulateFallClick = onSimulateFallClick
+            }
         )
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -190,7 +213,9 @@ fun HomeScreen(
 }
 
 @Composable
-private fun HomeHeader() {
+private fun HomeHeader(
+    onLogoClick: () -> Unit = {}
+) {
     Column {
         Row(
             verticalAlignment = Alignment.CenterVertically
@@ -199,7 +224,11 @@ private fun HomeHeader() {
                 modifier = Modifier
                     .size(48.dp)
                     .clip(ElderPalShapes.logo)
-                    .background(TealPrimary),
+                    .background(TealPrimary)
+                    .clickable(
+                        onClick = onLogoClick,
+                        role = Role.Button
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -439,7 +468,6 @@ private fun SosEmergencyBar(
 private fun FallDetectionCard(
     isEnabled: Boolean,
     onToggle: (Boolean) -> Unit,
-    onSimulateFallClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -499,55 +527,6 @@ private fun FallDetectionCard(
                         uncheckedTrackColor = BorderInput
                     )
                 )
-            }
-
-            // Divider and label clearly marking the button as a demo/test tool only
-            androidx.compose.material3.HorizontalDivider(
-                color = BorderCard,
-                thickness = 1.dp
-            )
-            Text(
-                text = "Demo tools",
-                style = ElderPalTypography.small.copy(fontSize = 15.sp),
-                color = TextSecondary,
-                modifier = Modifier.padding(top = 2.dp)
-            )
-
-            // Demo test button: Simulate fall
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .clip(ElderPalShapes.button)
-                    .background(Color(0xFFF9F6F0))
-                    .border(2.dp, BorderCard, ElderPalShapes.button)
-                    .clickable(
-                        onClick = onSimulateFallClick,
-                        role = Role.Button
-                    )
-                    .semantics {
-                        role = Role.Button
-                        contentDescription = "Simulate a fall to test the emergency alert flow"
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_warning),
-                        contentDescription = null,
-                        tint = WarningAmberText,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Simulate fall (Test)",
-                        style = ElderPalTypography.title.copy(
-                            color = TextPrimary,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    )
-                }
             }
         }
     }

@@ -90,6 +90,53 @@ object AlertMessageBuilder {
     }
 
     /**
+     * Builds a concise spoken alert message suitable for text-to-speech phone calls.
+     * Maps link is omitted and replaced by an announcement that a text message with location was sent.
+     *
+     * Example:
+     * "ElderPal alert. A fall was detected at 4:12 PM. Last medicine taken: Sample Medicine A at 3:30 PM. A text message with the location has been sent."
+     */
+    fun buildSpokenAlertMessage(
+        alertType: AlertType,
+        currentTime: LocalTime = LocalTime.now(),
+        lastTakenDose: DoseLogEntry? = null
+    ): String {
+        val timeStr = currentTime.format(timeFormatter)
+        val actionText = when (alertType) {
+            AlertType.FALL_DETECTED -> "A fall was detected at $timeStr."
+            AlertType.SOS_PRESSED -> "An SOS emergency alert was triggered at $timeStr."
+        }
+
+        val medicinePart = if (lastTakenDose != null) {
+            "Last medicine taken: ${lastTakenDose.medicineName} at ${lastTakenDose.takenTime}."
+        } else {
+            "Last medicine taken: No medicine logged today."
+        }
+
+        return "ElderPal alert. $actionText $medicinePart A text message with the location has been sent."
+    }
+
+    /**
+     * XML-escapes text for safe inclusion within TwiML XML tags.
+     */
+    fun escapeXml(text: String): String {
+        return text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("'", "&apos;")
+    }
+
+    /**
+     * Wraps a spoken message in inline TwiML using only the Say verb.
+     */
+    fun buildInlineTwiml(spokenText: String): String {
+        val escaped = escapeXml(spokenText)
+        return "<Response><Say>$escaped</Say></Response>"
+    }
+
+    /**
      * Computes the elapsed minutes between the logged dose time and the current time.
      */
     private fun calculateElapsedMinutes(takenTimeStr: String, currentTime: LocalTime): Long? {

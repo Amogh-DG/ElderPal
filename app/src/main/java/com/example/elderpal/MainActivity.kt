@@ -23,17 +23,21 @@ class MainActivity : ComponentActivity() {
 
     private val pendingRoute = mutableStateOf<String?>(null)
 
+    companion object {
+        var isForeground: Boolean = false
+            private set
+        var instance: MainActivity? = null
+            private set
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        instance = this
+        wakeAndUnlockScreen()
         enableEdgeToEdge()
 
         // Initialize high-priority medicine notification channel
         DoseReminderScheduler.createNotificationChannel(applicationContext)
-
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-        }
 
         handleIncomingIntent(intent)
 
@@ -44,7 +48,9 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(pendingRoute.value) {
                     val route = pendingRoute.value
                     if (route != null) {
-                        navController.navigate(route)
+                        navController.navigate(route) {
+                            launchSingleTop = true
+                        }
                         pendingRoute.value = null
                     }
                 }
@@ -62,10 +68,51 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        isForeground = true
+        instance = this
+    }
+
+    override fun onPause() {
+        super.onPause()
+        isForeground = false
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (instance == this) {
+            instance = null
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        wakeAndUnlockScreen()
         handleIncomingIntent(intent)
+    }
+
+    fun navigateToFallAlert() {
+        runOnUiThread {
+            wakeAndUnlockScreen()
+            pendingRoute.value = ElderPalRoutes.FALL_ALERT
+        }
+    }
+
+    private fun wakeAndUnlockScreen() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+            )
+        }
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
     private fun handleIncomingIntent(intent: Intent?) {

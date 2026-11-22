@@ -15,6 +15,7 @@ import com.example.elderpal.ai.CapturedImageHolder
 import com.example.elderpal.ai.CheckResultType
 import com.example.elderpal.data.DoseReminderScheduler
 import com.example.elderpal.data.MedicineRepository
+import com.example.elderpal.data.PermissionManager
 import kotlinx.coroutines.launch
 
 object ElderPalRoutes {
@@ -36,6 +37,8 @@ object ElderPalRoutes {
     const val RESULT_UNSURE = "result_unsure"
     const val ADD_CONTACT = "add_contact"
     const val ALERT_PREVIEW = "alert_preview"
+    const val DEMO_TOOLS = "demo_tools"
+    const val FIRST_RUN_PERMISSIONS = "first_run_permissions"
 }
 
 @Composable
@@ -43,11 +46,33 @@ fun ElderPalNavHost(
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController()
 ) {
+    val context = LocalContext.current
+    val startDestination = remember {
+        val activity = context as? android.app.Activity
+        if (activity?.intent?.action == com.example.elderpal.data.FallDetectionService.ACTION_FALL_ALERT) {
+            ElderPalRoutes.FALL_ALERT
+        } else if (!PermissionManager.isFirstRunCompleted(context)) {
+            ElderPalRoutes.FIRST_RUN_PERMISSIONS
+        } else {
+            ElderPalRoutes.HOME
+        }
+    }
+
     NavHost(
         navController = navController,
-        startDestination = ElderPalRoutes.HOME,
+        startDestination = startDestination,
         modifier = modifier
     ) {
+        composable(ElderPalRoutes.FIRST_RUN_PERMISSIONS) {
+            FirstRunPermissionsScreen(
+                onComplete = {
+                    navController.navigate(ElderPalRoutes.HOME) {
+                        popUpTo(ElderPalRoutes.FIRST_RUN_PERMISSIONS) { inclusive = true }
+                    }
+                }
+            )
+        }
+
         composable(ElderPalRoutes.HOME) {
             HomeScreen(
                 onScheduleClick = {
@@ -65,8 +90,8 @@ fun ElderPalNavHost(
                 onSosClick = {
                     navController.navigate(ElderPalRoutes.SOS)
                 },
-                onSimulateFallClick = {
-                    navController.navigate(ElderPalRoutes.FALL_ALERT)
+                onLogoClick = {
+                    navController.navigate(ElderPalRoutes.PERMISSIONS)
                 }
             )
         }
@@ -313,14 +338,30 @@ fun ElderPalNavHost(
 
         composable(ElderPalRoutes.FALL_ALERT) {
             FallAlertScreen(
-                onBack = { navController.popBackStack() },
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(ElderPalRoutes.HOME) {
+                            popUpTo(0)
+                        }
+                    }
+                },
                 onNavigateToContacts = { navController.navigate(ElderPalRoutes.CONTACTS) }
             )
         }
 
         composable(ElderPalRoutes.PERMISSIONS) {
             PermissionsScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onDemoToolsClick = { navController.navigate(ElderPalRoutes.DEMO_TOOLS) }
+            )
+        }
+
+        composable(ElderPalRoutes.DEMO_TOOLS) {
+            DemoToolsScreen(
+                onBack = { navController.popBackStack() },
+                onSimulateFallClick = {
+                    navController.navigate(ElderPalRoutes.FALL_ALERT)
+                }
             )
         }
 

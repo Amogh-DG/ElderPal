@@ -63,6 +63,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.elderpal.R
+import com.example.elderpal.data.PermissionManager
 import com.example.elderpal.ui.theme.CameraDark
 import com.example.elderpal.ui.theme.ElderPalShapes
 import com.example.elderpal.ui.theme.ElderPalTypography
@@ -88,7 +89,11 @@ fun CheckMedicineScreen(
     }
 
     var showPermissionExplainer by remember { mutableStateOf(false) }
-    var permissionDeniedPermanently by remember { mutableStateOf(false) }
+    var permissionDeniedPermanently by remember {
+        mutableStateOf(
+            PermissionManager.isPermissionRefused(context, PermissionManager.KEY_CAMERA_REFUSED)
+        )
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -96,6 +101,7 @@ fun CheckMedicineScreen(
         hasCameraPermission = isGranted
         if (!isGranted) {
             permissionDeniedPermanently = true
+            PermissionManager.setPermissionRefused(context, PermissionManager.KEY_CAMERA_REFUSED, true)
         }
     }
 
@@ -110,9 +116,13 @@ fun CheckMedicineScreen(
     }
 
     LaunchedEffect(hasCameraPermission) {
-        if (!hasCameraPermission && !permissionDeniedPermanently) {
-            showPermissionExplainer = true
-        } else if (hasCameraPermission) {
+        if (!hasCameraPermission) {
+            if (!PermissionManager.isPermissionRefused(context, PermissionManager.KEY_CAMERA_REFUSED) && !permissionDeniedPermanently) {
+                showPermissionExplainer = true
+            } else {
+                permissionDeniedPermanently = true
+            }
+        } else {
             cameraController.bindToLifecycle(lifecycleOwner)
         }
     }
@@ -126,6 +136,7 @@ fun CheckMedicineScreen(
             onDismissClick = {
                 showPermissionExplainer = false
                 permissionDeniedPermanently = true
+                PermissionManager.setPermissionRefused(context, PermissionManager.KEY_CAMERA_REFUSED, true)
             }
         )
     }

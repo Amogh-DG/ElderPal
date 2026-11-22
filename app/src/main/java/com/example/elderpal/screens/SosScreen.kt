@@ -56,6 +56,7 @@ import com.example.elderpal.data.AlertDispatchReport
 import com.example.elderpal.data.ContactAlertStatus
 import com.example.elderpal.data.ContactsRepository
 import com.example.elderpal.data.EmergencyAlertManager
+import com.example.elderpal.data.PermissionManager
 import com.example.elderpal.data.PhoneCallStatus
 import com.example.elderpal.data.SmsDeliveryStatus
 import com.example.elderpal.ui.theme.BackgroundWarmCream
@@ -142,8 +143,20 @@ fun SosScreen(
         }
     }
 
+    fun shouldAskLocation(): Boolean {
+        return !hasLocationPermission() && !PermissionManager.isPermissionRefused(context, PermissionManager.KEY_LOCATION_REFUSED)
+    }
+
+    fun shouldAskSms(): Boolean {
+        return !hasSmsPermission() && !PermissionManager.isPermissionRefused(context, PermissionManager.KEY_SMS_REFUSED)
+    }
+
+    fun shouldAskCall(): Boolean {
+        return !hasCallPermission() && !PermissionManager.isPermissionRefused(context, PermissionManager.KEY_CALL_REFUSED)
+    }
+
     fun proceedToNextPermissionAfterSms() {
-        if (!hasCallPermission()) {
+        if (shouldAskCall()) {
             currentStep = SosStep.EXPLAIN_CALL
         } else {
             triggerEmergencyDispatch()
@@ -151,7 +164,7 @@ fun SosScreen(
     }
 
     fun proceedToNextPermissionAfterLocation() {
-        if (!hasSmsPermission()) {
+        if (shouldAskSms()) {
             currentStep = SosStep.EXPLAIN_SMS
         } else {
             proceedToNextPermissionAfterSms()
@@ -189,6 +202,7 @@ fun SosScreen(
                     )
                 },
                 onDismissClick = {
+                    PermissionManager.setPermissionRefused(context, PermissionManager.KEY_LOCATION_REFUSED, true)
                     proceedToNextPermissionAfterLocation()
                 }
             )
@@ -199,6 +213,7 @@ fun SosScreen(
                     smsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
                 },
                 onDismissClick = {
+                    PermissionManager.setPermissionRefused(context, PermissionManager.KEY_SMS_REFUSED, true)
                     proceedToNextPermissionAfterSms()
                 }
             )
@@ -209,6 +224,7 @@ fun SosScreen(
                     callPermissionLauncher.launch(Manifest.permission.CALL_PHONE)
                 },
                 onDismissClick = {
+                    PermissionManager.setPermissionRefused(context, PermissionManager.KEY_CALL_REFUSED, true)
                     triggerEmergencyDispatch()
                 }
             )
@@ -232,7 +248,7 @@ fun SosScreen(
                         isSending = false
                         return@SosConfirmationView
                     }
-                    if (!hasLocationPermission()) {
+                    if (shouldAskLocation()) {
                         currentStep = SosStep.EXPLAIN_LOCATION
                     } else {
                         proceedToNextPermissionAfterLocation()

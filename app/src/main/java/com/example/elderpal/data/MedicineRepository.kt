@@ -129,6 +129,24 @@ class MedicineRepository(private val context: Context) {
         return allLogs.reversed().take(limit)
     }
 
+    // Directly writes a list of dose log entries, replacing nothing (used only by demo data loader)
+    suspend fun saveDemoLog(entries: List<DoseLogEntry>) {
+        context.dataStore.edit { preferences ->
+            val currentJson = preferences[doseLogKey] ?: ""
+            val list = deserializeDoseLog(currentJson).toMutableList()
+            list.addAll(entries)
+            preferences[doseLogKey] = serializeDoseLog(list)
+        }
+    }
+
+    // Erases all medicines and all dose log entries (used by demo reset)
+    suspend fun clearAll() {
+        context.dataStore.edit { preferences ->
+            preferences[medicinesKey] = "[]"
+            preferences[doseLogKey] = "[]"
+        }
+    }
+
     // Retrieves the most recently taken dose logged today, or null if none
     suspend fun getLastTakenDoseToday(): DoseLogEntry? {
         val todayStr = LocalDate.now().toString()

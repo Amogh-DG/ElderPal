@@ -11,6 +11,9 @@ if (localPropertiesFile.exists()) {
     localProperties.load(localPropertiesFile.inputStream())
 }
 val geminiApiKey: String = localProperties.getProperty("GEMINI_API_KEY") ?: ""
+val twilioAccountSid: String = localProperties.getProperty("TWILIO_ACCOUNT_SID") ?: ""
+val twilioAuthToken: String = localProperties.getProperty("TWILIO_AUTH_TOKEN") ?: ""
+val twilioFromNumber: String = localProperties.getProperty("TWILIO_FROM_NUMBER") ?: ""
 
 android {
     namespace = "com.example.elderpal"
@@ -28,6 +31,9 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
+        buildConfigField("String", "TWILIO_ACCOUNT_SID", "\"$twilioAccountSid\"")
+        buildConfigField("String", "TWILIO_AUTH_TOKEN", "\"$twilioAuthToken\"")
+        buildConfigField("String", "TWILIO_FROM_NUMBER", "\"$twilioFromNumber\"")
     }
 
     buildTypes {
