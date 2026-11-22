@@ -1,4 +1,3 @@
-// Broadcast receiver that receives alarm events and displays the high-priority dose reminder notification.
 package com.example.elderpal.data
 
 import android.app.NotificationManager
@@ -27,10 +26,8 @@ class DoseReminderReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // Ensure notification channel exists
                 DoseReminderScheduler.createNotificationChannel(context)
 
-                // Check whether this dose was already marked as taken today in the log
                 val repository = MedicineRepository(context)
                 val todayStr = LocalDate.now().toString()
                 val allLogs = repository.doseLog.first()
@@ -40,7 +37,7 @@ class DoseReminderReceiver : BroadcastReceiver() {
                     log.date == todayStr
                 }
 
-                // If already taken, skip notification
+                // skip if already taken
                 if (!isTakenToday) {
                     showNotification(
                         context = context,
@@ -65,7 +62,7 @@ class DoseReminderReceiver : BroadcastReceiver() {
         scheduledTime: String,
         notificationId: Int
     ) {
-        // Tapping the notification launches the Reminder screen in MainActivity
+        // tap opens the reminder screen
         val activityIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("destination", "reminder")
@@ -82,7 +79,6 @@ class DoseReminderReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Concise plain text readable on smartwatches and phone notification heads-up banners
         val notification = NotificationCompat.Builder(context, DoseReminderScheduler.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_pill)
             .setContentTitle("Time for your medicine")

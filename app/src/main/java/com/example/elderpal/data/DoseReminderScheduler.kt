@@ -1,4 +1,3 @@
-// Handles scheduling, snoozing, and canceling medicine reminder notifications using Android AlarmManager.
 package com.example.elderpal.data
 
 import android.app.AlarmManager
@@ -27,7 +26,6 @@ object DoseReminderScheduler {
     const val EXTRA_SCHEDULED_TIME = "extra_scheduled_time"
     const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
 
-    // Registers the high-priority medicine notification channel with the system
     fun createNotificationChannel(context: Context) {
         val name = "Medicine Reminders"
         val descriptionText = "Alerts when it is time to take your scheduled medicine."
@@ -41,7 +39,7 @@ object DoseReminderScheduler {
         notificationManager.createNotificationChannel(channel)
     }
 
-    // Schedules a reminder at a specific clock time
+    // schedule the alarm
     fun scheduleReminder(
         context: Context,
         medicineId: String,
@@ -69,7 +67,6 @@ object DoseReminderScheduler {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Schedule exact alarm if permission allows, otherwise fallback gracefully
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (alarmManager.canScheduleExactAlarms()) {
                 alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
@@ -81,7 +78,6 @@ object DoseReminderScheduler {
         }
     }
 
-    // Cancels an active or pending reminder for a specific medicine and dose time
     fun cancelReminder(context: Context, medicineId: String, scheduledTime: String) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val notificationId = (medicineId.hashCode() xor scheduledTime.hashCode()) and 0x7FFFFFFF
@@ -102,12 +98,11 @@ object DoseReminderScheduler {
             pendingIntent.cancel()
         }
 
-        // Dismiss active notification if already displayed in the notification drawer
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.cancel(notificationId)
     }
 
-    // Snoozes a reminder for 10 minutes
+    // snooze for 10 minutes
     fun scheduleSnooze(
         context: Context,
         medicineId: String,
@@ -126,15 +121,13 @@ object DoseReminderScheduler {
             triggerAtMillis = snoozeTimeMillis
         )
 
-        // Dismiss current notification while snooze timer runs
         val notificationId = (medicineId.hashCode() xor scheduledTime.hashCode()) and 0x7FFFFFFF
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.cancel(notificationId)
     }
 
-    // Triggers a test reminder in 10 seconds for development and testing
     fun triggerTestReminder(context: Context, medicineName: String = "Blood Pressure pill", dose: String = "1 tablet") {
-        val testTriggerTime = System.currentTimeMillis() + 10_000L // 10 seconds from now
+        val testTriggerTime = System.currentTimeMillis() + 10_000L
         scheduleReminder(
             context = context,
             medicineId = "test_med_id",
@@ -145,7 +138,7 @@ object DoseReminderScheduler {
         )
     }
 
-    // Reschedules all reminders for all saved medicines
+    // reschedule all active reminders
     fun rescheduleAll(context: Context) {
         val repository = MedicineRepository(context)
         CoroutineScope(Dispatchers.IO).launch {
@@ -162,7 +155,7 @@ object DoseReminderScheduler {
                         log.date == todayStr
                     }
 
-                    // Skip doses already marked taken today
+                    // skip if already taken
                     if (!isTakenToday) {
                         val triggerMillis = calculateNextTriggerMillis(time)
                         scheduleReminder(
@@ -179,7 +172,6 @@ object DoseReminderScheduler {
         }
     }
 
-    // Calculates the epoch millisecond timestamp for a given clock time string (e.g. "8:00 AM")
     fun calculateNextTriggerMillis(timeStr: String): Long {
         val now = LocalDateTime.now()
         val minutesOfDay = MedicineRepository.parseTimeToMinutes(timeStr)
@@ -187,11 +179,11 @@ object DoseReminderScheduler {
         val minute = minutesOfDay % 60
 
         var scheduledDateTime = now.toLocalDate().atTime(hour, minute, 0)
-        // If scheduled time for today has already passed, schedule for tomorrow
         if (scheduledDateTime.isBefore(now)) {
             scheduledDateTime = scheduledDateTime.plusDays(1)
         }
 
         return scheduledDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
     }
+}
 }

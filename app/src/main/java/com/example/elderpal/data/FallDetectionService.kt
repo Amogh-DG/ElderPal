@@ -1,4 +1,3 @@
-// Foreground service continuously monitoring the phone's accelerometer for suspected falls.
 package com.example.elderpal.data
 
 import android.app.Notification
@@ -34,7 +33,6 @@ class FallDetectionService : Service() {
         const val ALERT_NOTIFICATION_ID = 2002
         const val ACTION_FALL_ALERT = "com.example.elderpal.ACTION_FALL_ALERT"
 
-        // Global reference so the UI can notify the detector of cancellation or alert completion
         var activeDetector: FallDetector? = null
             private set
 
@@ -117,7 +115,7 @@ class FallDetectionService : Service() {
             val contacts = contactsRepository.getAllContacts()
 
             if (contacts.isEmpty()) {
-                // Requirement 5: Do not start a countdown that cannot send. Show add contact message instead.
+                // skip countdown if no contacts are saved
                 showNoContactsNotification()
                 return@launch
             }
@@ -169,15 +167,13 @@ class FallDetectionService : Service() {
 
         notificationManager.notify(ALERT_NOTIFICATION_ID, alertNotification)
 
-        // If the app is already in the foreground, open the countdown directly
+        // open countdown directly if already in foreground
         if (MainActivity.isForeground) {
             MainActivity.instance?.navigateToFallAlert()
         } else {
-            // Attempt direct launch if allowed
             try {
                 startActivity(fallIntent)
             } catch (e: Exception) {
-                // Full-screen intent notification serves as fallback
             }
         }
     }

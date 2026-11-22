@@ -1,4 +1,3 @@
-// Manages emergency alert execution: retrieves device location, sends alert SMS to all contacts, and calls the primary contact.
 package com.example.elderpal.data
 
 import android.Manifest
@@ -48,7 +47,6 @@ data class AlertDispatchReport(
 
 class EmergencyAlertManager(private val context: Context) {
 
-    // Retrieves the last known location using the Android framework LocationManager
     fun getLastKnownLocation(): Location? {
         val hasFine = ContextCompat.checkSelfPermission(
             context,
@@ -85,15 +83,12 @@ class EmergencyAlertManager(private val context: Context) {
                     }
                 }
             } catch (e: SecurityException) {
-                // Permission revoked during call
             } catch (e: Exception) {
-                // Ignore provider error and try next
             }
         }
         return bestLocation
     }
 
-    // Executes the entire emergency dispatch sequence: SMS first, then phone call
     fun dispatchEmergencyAlert(
         contacts: List<Contact>,
         location: Location?,
@@ -107,7 +102,7 @@ class EmergencyAlertManager(private val context: Context) {
             "https://maps.google.com/?q=${it.latitude},${it.longitude}"
         }
 
-        // Shared message builder formats alert type, current time, last medicine taken, and location
+        // build the message text
         val alertMessage = AlertMessageBuilder.buildAlertMessage(
             alertType = alertType,
             currentTime = now,
@@ -125,7 +120,7 @@ class EmergencyAlertManager(private val context: Context) {
             Manifest.permission.CALL_PHONE
         ) == PackageManager.PERMISSION_GRANTED
 
-        // 1. Send SMS to all emergency contacts
+        // send the sms to every contact
         val contactStatuses = mutableListOf<ContactAlertStatus>()
         for (contact in contacts) {
             val normalized = normalizePhoneNumber(contact.phoneNumber)
@@ -142,7 +137,7 @@ class EmergencyAlertManager(private val context: Context) {
             )
         }
 
-        // 2. Identify the primary "call first" contact
+        // call the first contact
         val primaryContact = contacts.firstOrNull { it.isCallFirst } ?: contacts.firstOrNull()
         var callStatus = PhoneCallStatus.NONE
 
@@ -150,7 +145,7 @@ class EmergencyAlertManager(private val context: Context) {
             val normalized = normalizePhoneNumber(primaryContact.phoneNumber)
             val digits = normalized.filter { it.isDigit() }
 
-            // Guard: Never auto-dial emergency service numbers
+            // never auto-dial emergency numbers
             if (digits !in ContactsRepository.EMERGENCY_NUMBERS) {
                 callStatus = if (hasCallPermission) {
                     placeDirectPhoneCall(normalized)
@@ -162,7 +157,7 @@ class EmergencyAlertManager(private val context: Context) {
             }
         }
 
-        // 3. Optional Twilio voice calls to family contacts (off main thread, never delays SMS or direct call)
+        // optional twilio call
         triggerTwilioVoiceCallsAsync(
             contacts = contacts,
             alertType = alertType,
@@ -179,7 +174,6 @@ class EmergencyAlertManager(private val context: Context) {
         )
     }
 
-    // Convenience function for dispatching an SOS emergency alert
     fun dispatchSosAlert(
         contacts: List<Contact>,
         location: Location?,
@@ -191,7 +185,6 @@ class EmergencyAlertManager(private val context: Context) {
         alertType = AlertType.SOS_PRESSED
     )
 
-    // Sends SMS directly via SmsManager, dividing multipart messages if necessary
     private fun sendDirectSms(normalizedNumber: String, message: String): SmsDeliveryStatus {
         return try {
             val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -209,12 +202,10 @@ class EmergencyAlertManager(private val context: Context) {
             }
             SmsDeliveryStatus.SENT
         } catch (e: Exception) {
-            // If direct SMS fails (e.g. no carrier network / SIM), fall back to messaging app
             openMessagingAppFallback(normalizedNumber, message)
         }
     }
 
-    // Opens the user's default SMS app with the recipient and text prefilled
     private fun openMessagingAppFallback(normalizedNumber: String, message: String): SmsDeliveryStatus {
         return try {
             val intent = Intent(Intent.ACTION_SENDTO).apply {
@@ -229,7 +220,6 @@ class EmergencyAlertManager(private val context: Context) {
         }
     }
 
-    // Initiates a phone call directly using ACTION_CALL
     fun placeDirectPhoneCall(normalizedNumber: String): PhoneCallStatus {
         return try {
             val intent = Intent(Intent.ACTION_CALL).apply {
@@ -243,7 +233,6 @@ class EmergencyAlertManager(private val context: Context) {
         }
     }
 
-    // Opens the system dialer with the phone number pre-filled using ACTION_DIAL
     fun openDialerFallback(normalizedNumber: String): PhoneCallStatus {
         return try {
             val intent = Intent(Intent.ACTION_DIAL).apply {
@@ -257,7 +246,6 @@ class EmergencyAlertManager(private val context: Context) {
         }
     }
 
-    // Dispatches optional spoken Twilio voice calls to all family contacts asynchronously
     private fun triggerTwilioVoiceCallsAsync(
         contacts: List<Contact>,
         alertType: AlertType,
@@ -268,7 +256,6 @@ class EmergencyAlertManager(private val context: Context) {
         val authToken = BuildConfig.TWILIO_AUTH_TOKEN.trim()
         val fromNumber = BuildConfig.TWILIO_FROM_NUMBER.trim()
 
-        // Feature is silently off if any credential is missing or blank
         if (accountSid.isBlank() || authToken.isBlank() || fromNumber.isBlank()) {
             return
         }
@@ -284,20 +271,16 @@ class EmergencyAlertManager(private val context: Context) {
         )
         val twiml = AlertMessageBuilder.buildInlineTwiml(spokenText)
 
-        // Run network call off the main thread with short timeout
         Thread {
             val calledNumbers = mutableSetOf<String>()
             for (contact in contacts) {
                 val normalized = normalizePhoneNumber(contact.phoneNumber)
                 val digits = normalized.filter { it.isDigit() }
 
-                // Guard: Never auto-dial emergency numbers
                 if (digits in ContactsRepository.EMERGENCY_NUMBERS) {
                     continue
                 }
 
-                // If two contacts share the same phone number after normalizing it, call that number only once.
-                // Also ensures no more than one voice call per contact per alert.
                 if (normalized.isBlank() || !calledNumbers.add(normalized)) {
                     continue
                 }
@@ -313,7 +296,6 @@ class EmergencyAlertManager(private val context: Context) {
         }.start()
     }
 
-    // Attempts a Twilio call and retries at most once if it fails
     private fun makeTwilioCallWithSingleRetry(
         accountSid: String,
         authToken: String,
@@ -323,13 +305,11 @@ class EmergencyAlertManager(private val context: Context) {
     ): Boolean {
         val success = executeTwilioCall(accountSid, authToken, fromNumber, toNumber, twiml)
         if (!success) {
-            // Do not retry more than once
             return executeTwilioCall(accountSid, authToken, fromNumber, toNumber, twiml)
         }
         return true
     }
 
-    // Executes the HTTP POST request to Twilio Calls REST API using standard HttpURLConnection
     private fun executeTwilioCall(
         accountSid: String,
         authToken: String,
@@ -342,8 +322,8 @@ class EmergencyAlertManager(private val context: Context) {
             val endpointUrl = URL("https://api.twilio.com/2010-04-01/Accounts/$accountSid/Calls.json")
             connection = (endpointUrl.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
-                connectTimeout = 5000 // 5 seconds
-                readTimeout = 5000    // 5 seconds
+                connectTimeout = 5000
+                readTimeout = 5000
                 doOutput = true
                 instanceFollowRedirects = false
 
@@ -365,10 +345,8 @@ class EmergencyAlertManager(private val context: Context) {
             }
 
             val code = connection.responseCode
-            // HTTP 201 Created indicates Twilio queued/initiated the call
             code in 200..299
         } catch (e: Exception) {
-            // Never log credentials, phone numbers, or message text
             false
         } finally {
             connection?.disconnect()
@@ -376,9 +354,6 @@ class EmergencyAlertManager(private val context: Context) {
     }
 
     companion object {
-        // Normalizes phone numbers by stripping whitespace, hyphens, brackets, and periods.
-        // If a number does not contain an international country code (no leading '+'), it is kept as entered;
-        // standard Android telephony automatically routes domestic numbers according to the active SIM carrier.
         fun normalizePhoneNumber(phone: String): String {
             return phone.trim().replace(Regex("[\\s\\-\\(\\)\\.]"), "")
         }
