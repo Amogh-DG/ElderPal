@@ -367,7 +367,12 @@ fun ElderPalNavHost(
 
         composable(ElderPalRoutes.SCAN_PRESCRIPTION) {
             ScanPrescriptionScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onSaved = {
+                    navController.navigate(ElderPalRoutes.SCHEDULE) {
+                        popUpTo(ElderPalRoutes.HOME)
+                    }
+                }
             )
         }
 
