@@ -90,7 +90,7 @@ class MedicineRepository(private val context: Context) {
         }
     }
 
-    // Records a dose as taken right now in the local dose log
+    // Records a dose as taken right now in the local dose log and cancels its pending reminder
     suspend fun markDoseTaken(medicineId: String, medicineName: String, scheduledTime: String) {
         val now = LocalTime.now()
         val formattedTime = now.format(DateTimeFormatter.ofPattern("h:mm a"))
@@ -110,6 +110,9 @@ class MedicineRepository(private val context: Context) {
             list.add(newEntry)
             preferences[doseLogKey] = serializeDoseLog(list)
         }
+
+        // Cancel pending alarm and active notification for this taken dose
+        DoseReminderScheduler.cancelReminder(context, medicineId, scheduledTime)
     }
 
     // Retrieves the most recently taken doses (most recent first) for alert messages

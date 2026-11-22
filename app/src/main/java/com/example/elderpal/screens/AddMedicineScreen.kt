@@ -208,6 +208,7 @@ fun AddMedicineScreen(
                             )
                             coroutineScope.launch {
                                 repository.saveMedicine(newMedicine)
+                                com.example.elderpal.data.DoseReminderScheduler.rescheduleAll(context)
                                 onSaved()
                             }
                         }
