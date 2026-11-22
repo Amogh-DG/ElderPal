@@ -165,7 +165,6 @@ class EmergencyAlertManager(private val context: Context) {
         // 3. Optional Twilio voice calls to family contacts (off main thread, never delays SMS or direct call)
         triggerTwilioVoiceCallsAsync(
             contacts = contacts,
-            primaryContact = primaryContact,
             alertType = alertType,
             currentTime = now,
             lastTakenDose = lastTakenDose
@@ -258,10 +257,9 @@ class EmergencyAlertManager(private val context: Context) {
         }
     }
 
-    // Dispatches optional spoken Twilio voice calls to non-primary family contacts asynchronously
+    // Dispatches optional spoken Twilio voice calls to all family contacts asynchronously
     private fun triggerTwilioVoiceCallsAsync(
         contacts: List<Contact>,
-        primaryContact: Contact?,
         alertType: AlertType,
         currentTime: LocalTime,
         lastTakenDose: DoseLogEntry?
@@ -275,16 +273,7 @@ class EmergencyAlertManager(private val context: Context) {
             return
         }
 
-        val alsoCallFirst = isVoiceCallAlsoFirstContact(context)
-        val contactsToCall = contacts.filter { contact ->
-            if (alsoCallFirst) {
-                true
-            } else {
-                contact != primaryContact && !contact.isCallFirst
-            }
-        }
-
-        if (contactsToCall.isEmpty()) {
+        if (contacts.isEmpty()) {
             return
         }
 
@@ -298,7 +287,7 @@ class EmergencyAlertManager(private val context: Context) {
         // Run network call off the main thread with short timeout
         Thread {
             val calledNumbers = mutableSetOf<String>()
-            for (contact in contactsToCall) {
+            for (contact in contacts) {
                 val normalized = normalizePhoneNumber(contact.phoneNumber)
                 val digits = normalized.filter { it.isDigit() }
 
@@ -307,7 +296,8 @@ class EmergencyAlertManager(private val context: Context) {
                     continue
                 }
 
-                // Never place more than one voice call per contact per alert
+                // If two contacts share the same phone number after normalizing it, call that number only once.
+                // Also ensures no more than one voice call per contact per alert.
                 if (normalized.isBlank() || !calledNumbers.add(normalized)) {
                     continue
                 }
@@ -386,21 +376,6 @@ class EmergencyAlertManager(private val context: Context) {
     }
 
     companion object {
-        private const val PREFS_NAME = "elderpal_voice_call_prefs"
-        private const val KEY_VOICE_CALL_ALSO_FIRST = "voice_call_also_first_contact"
-
-        fun isVoiceCallAlsoFirstContact(context: Context): Boolean {
-            return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getBoolean(KEY_VOICE_CALL_ALSO_FIRST, false)
-        }
-
-        fun setVoiceCallAlsoFirstContact(context: Context, enabled: Boolean) {
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .edit()
-                .putBoolean(KEY_VOICE_CALL_ALSO_FIRST, enabled)
-                .apply()
-        }
-
         // Normalizes phone numbers by stripping whitespace, hyphens, brackets, and periods.
         // If a number does not contain an international country code (no leading '+'), it is kept as entered;
         // standard Android telephony automatically routes domestic numbers according to the active SIM carrier.

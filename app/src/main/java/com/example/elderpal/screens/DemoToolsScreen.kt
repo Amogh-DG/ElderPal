@@ -32,8 +32,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -61,7 +59,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.elderpal.R
 import com.example.elderpal.data.DemoDataManager
-import com.example.elderpal.data.EmergencyAlertManager
 import com.example.elderpal.data.FallDetectionService
 import com.example.elderpal.data.FallDetector
 import com.example.elderpal.ui.theme.BackgroundWarmCream
@@ -100,9 +97,6 @@ fun DemoToolsScreen(
     var showResetConfirm by remember { mutableStateOf(false) }
     // Warning shown when the judge leaves the phone number blank
     var showBlankPhoneWarning by remember { mutableStateOf(false) }
-    var voiceCallAlsoFirstContact by remember {
-        mutableStateOf(EmergencyAlertManager.isVoiceCallAlsoFirstContact(context))
-    }
 
     // Live debug sensor state for testing on physical phone (in-memory only, never saved or logged)
     var currentG by remember { mutableFloatStateOf(1.0f) }
@@ -445,52 +439,6 @@ fun DemoToolsScreen(
                         color = SuccessGreen
                     )
                 }
-            }
-        }
-
-        // ── Voice call test switch ──────────────────────────────────────────
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = ElderPalShapes.card,
-            colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
-            border = androidx.compose.material3.CardDefaults.outlinedCardBorder()
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 16.dp)
-                ) {
-                    Text(
-                        text = "Voice call test: also call the first contact",
-                        style = ElderPalTypography.title.copy(fontSize = 20.sp, fontWeight = FontWeight.Bold),
-                        color = TextPrimary
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Twilio voice calls normally go to secondary family contacts while the primary contact gets a direct phone call. Turn this on to also place a Twilio voice call to the primary contact when testing with a single phone number.",
-                        style = ElderPalTypography.body.copy(fontSize = 17.sp),
-                        color = TextSecondary
-                    )
-                }
-
-                Switch(
-                    checked = voiceCallAlsoFirstContact,
-                    onCheckedChange = { isChecked ->
-                        voiceCallAlsoFirstContact = isChecked
-                        EmergencyAlertManager.setVoiceCallAlsoFirstContact(context, isChecked)
-                    },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = TealPrimary
-                    )
-                )
             }
         }
 
